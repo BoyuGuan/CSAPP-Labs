@@ -114,7 +114,7 @@ NOTES:
      counted; you may use as many of these as you want without penalty.
   3. Use the btest test harness to check your functions for correctness.
   4. Use the BDD checker to formally verify your functions
-  5. The maximum number of ops for each function is given in the
+  5. The maximum num0.ber of ops for each function is given in the
      header comment for each function. If there are any inconsistencies 
      between the maximum ops in the writeup and in this file, consider
      this file the authoritative source.
@@ -161,8 +161,14 @@ int getByte(int x, int n) {
  *   Rating: 3 
  */
 int logicalShift(int x, int n) {
+  //!难题
   int mask=((0x1<<(32+~n))+~0)|(0x1<<(32+~n));
-  return (x>>n)&mask;
+  return (x>>n) & mask;
+
+  // return (x >> n) & (0x1<<(32+~n));
+  //  bug: 2**31用int无法表示,0x1<<31会变成Tmin
+
+
 /*  int c=((0x1<<31>>31)^0x1)<<31;
   return ((x>>n)^(c>>n)); it's wrong for 0x0>>0x1==0x0
 */
@@ -177,19 +183,17 @@ int logicalShift(int x, int n) {
  *   Rating: 4
  */
 int bitCount(int x) {
-  int _mask1=(0x55)|((0x55)<<8);
-  int _mask2=(0x33)|((0x33)<<8);
-  int _mask3=(0x0f)|((0x0f)<<8);
-  int mask1=(_mask1)|(_mask1<<16);
-  int mask2=(_mask2)|(_mask2<<16);
-  int mask3=(_mask3)|(_mask3<<16);
-  int mask4=(0xff)|(0xff<<16);
-  int mask5=(0xff)|(0xff<<8);
-  int ans=(x&mask1)+((x>>1)&mask1);
-  ans=(ans&mask2)+((ans>>2)&mask2);
-  ans=(ans&mask3)+((ans>>4)&mask3);
-  ans=(ans&mask4)+((ans>>8)&mask4);
-  ans=(ans&mask5)+((ans>>16)&mask5);
+  //!难题
+  int mask1= 0x55555555;
+  int mask2= 0x33333333;
+  int mask3= 0x0f0f0f0f;
+  int mask4= 0x00ff00ff;
+  int mask5= 0x0000ffff;
+  int ans=(x&mask1)+((x>>1)&mask1);  // 0x55555555 此步后每两位为对应原两位的1的个数
+  ans=(ans&mask2)+((ans>>2)&mask2);  // 0x33333333 此步后每四位为对应原四位的1的个数
+  ans=(ans&mask3)+((ans>>4)&mask3);  // 0x0f0f0f0f
+  ans=(ans&mask4)+((ans>>8)&mask4);  // 0x00ff00ff
+  ans=(ans&mask5)+((ans>>16)&mask5); // 0x0000ffff
   return ans;
 }
 /* 
@@ -200,12 +204,18 @@ int bitCount(int x) {
  *   Rating: 4 
  */
 int bang(int x) {
-  x=(x>>16)|x;
-  x=(x>>8)|x;
-  x=(x>>4)|x;
-  x=(x>>2)|x;
-  x=(x>>1)|x;
-  return ~x&0x1;
+  // x=(x>>16)|x;
+  // x=(x>>8)|x;
+  // x=(x>>4)|x;
+  // x=(x>>2)|x;
+  // x=(x>>1)|x;
+  // return ~x&0x1;
+  int a = 0x80000000 & x ; //如果是负数，最左边一位为1，提取出。
+  int b = (0x7fffffff + x ) & 0x80000000; // 如果是正数，加法完成后最左边一位为1，提取出。
+  int ans = a | b; //判断是否为不为0，不为0的话头一个1数字为1。
+  ans = (ans >>31) &(0x1); //一道
+  return (ans ^ 0x1);
+  // return ans;
 }
 /* 
  * tmin - return minimum two's complement integer 
