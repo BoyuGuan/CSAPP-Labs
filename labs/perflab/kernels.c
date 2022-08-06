@@ -47,17 +47,18 @@ void naive_rotate(int dim, pixel *src, pixel *dst)
 char rotate_descr[] = "rotate: Current working version";
 void rotate(int dim, pixel *src, pixel *dst)
 {
-    int i, j, a, b;
+    int i, j, ii, jj;
     int sdim = dim - 1;
-    for (i = 0; i < dim; i += 8)
+    int batchSize = 16;
+    for (i = 0; i < dim; i += batchSize)
     {
-        for (j = 0; j < dim; j += 8)
+        for (j = 0; j < dim; j += batchSize)
         {
-            for (a = i; a < i + 8; a++)
+            for (ii = i; ii < i + batchSize; ii++)
             {
-                for (b = j; b < j + 8; b++)
+                for (jj = j; jj < j + batchSize; jj++)
                 {
-                    dst[RIDX(sdim - b, a, dim)] = src[RIDX(a, b, dim)];
+                    dst[RIDX(sdim - jj, ii, dim)] = src[RIDX(ii, jj, dim)];
                 }
             }
         }
@@ -183,6 +184,7 @@ void smooth(int dim, pixel *src, pixel *dst)
     pixel current_pixel;
     pixel *pcurrent_pixel = &current_pixel;
 
+    //左上角
     i = 0;
     j = 0;
     pcurrent_pixel->red =
@@ -199,6 +201,7 @@ void smooth(int dim, pixel *src, pixel *dst)
                          4);
     dst[RIDX(0, 0, dim)] = current_pixel;
 
+    //右上角
     i = 0;
     j = dim - 1;
     pcurrent_pixel->red =
@@ -215,6 +218,7 @@ void smooth(int dim, pixel *src, pixel *dst)
                          4);
     dst[RIDX(i, j, dim)] = current_pixel;
 
+    //左下角
     i = dim - 1;
     j = 0;
     pcurrent_pixel->red =
@@ -231,6 +235,7 @@ void smooth(int dim, pixel *src, pixel *dst)
                          4);
     dst[RIDX(i, j, dim)] = current_pixel;
 
+    // 右下角
     i = dim - 1;
     j = dim - 1;
     pcurrent_pixel->red =
@@ -246,8 +251,9 @@ void smooth(int dim, pixel *src, pixel *dst)
                                 src[RIDX(i, j - 1, dim)].blue + src[RIDX(i - 1, j - 1, dim)].blue)) /
                          4);
     dst[RIDX(i, j, dim)] = current_pixel;
-
-    j = 0;
+    
+    //图片第一列
+    j = 0; 
     for (i = 1; i < dim - 1; i++)
     {
         pcurrent_pixel->red =
@@ -268,6 +274,7 @@ void smooth(int dim, pixel *src, pixel *dst)
         dst[RIDX(i, j, dim)] = current_pixel;
     }
 
+    //图片最后一行
     i = dim - 1;
     for (j = 1; j < dim - 1; j++)
     {
@@ -289,7 +296,8 @@ void smooth(int dim, pixel *src, pixel *dst)
         dst[RIDX(i, j, dim)] = current_pixel;
     }
 
-    j = dim - 1;
+    //图片最右侧一列
+    j = dim - 1; 
     for (i = 1; i < dim - 1; i++)
     {
         pcurrent_pixel->red =
@@ -310,7 +318,8 @@ void smooth(int dim, pixel *src, pixel *dst)
         dst[RIDX(i, j, dim)] = current_pixel;
     }
 
-    i = 0;
+    //图片最上一行
+    i = 0; 
     for (j = 1; j < dim - 1; j++)
     {
         pcurrent_pixel->red =
@@ -331,6 +340,7 @@ void smooth(int dim, pixel *src, pixel *dst)
         dst[RIDX(i, j, dim)] = current_pixel;
     }
 
+    //里边的所有像素
     for (i = 1; i < dim - 1; i++)
     {
         for (j = 1; j < dim - 1; j++)
