@@ -2,7 +2,7 @@
  * @Author: Jack Guan cnboyuguan@gmail.com
  * @Date: 2022-08-15 00:43:27
  * @LastEditors: Jack Guan cnboyuguan@gmail.com
- * @LastEditTime: 2022-08-15 15:51:06
+ * @LastEditTime: 2022-08-27 23:10:54
  * @FilePath: /guan/CSAPP/CSAPP-Labs/labs/proxylab/proxy.c
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -14,18 +14,18 @@
 #define MAX_OBJECT_SIZE 102400
 
 /* You won't lose style points for including this long line in your code */
-static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 Firefox/10.0.3\r\n";
-static const char *connection_hdr = "Connection: close\r\n";
-static const char *proxy_connection_hdr = "Proxy-Connection: close\r\n";
+static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 Firefox/10.0.3";
+static const char *connection_hdr = "Connection: close";
+static const char *proxy_connection_hdr = "Proxy-Connection: close";
 
 
 void handleClient(int connectFd);
-void readHeaders(rio_t *rp, char * headers);
+void readHeaders(rio_t *rp);
 void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longmsg);
 
 int main(int argc, char **argv)
 {
-    int listenFd, connectFd, clientFd;
+    int listenFd, connectFd;
     char clientHostName[MAXLINE], clientPort[MAXLINE]; 
     // check form
     if (argc != 2)
@@ -44,7 +44,8 @@ int main(int argc, char **argv)
         clientLen = sizeof(clientAddr);
         connectFd = Accept(listenFd, (SA *)& clientAddr, &clientLen);
         Getnameinfo((SA *)&clientAddr, clientLen, clientHostName, MAXLINE, clientPort, MAXLINE, 0);
-        printf("Accept connection from (%s,%s):\n content is :\n", clientHostName, clientPort);
+        printf("\n########### new proxy###########\n##############\n");
+        printf("Accept connection from (%s,%s), content is :\n", clientHostName, clientPort);
         handleClient(connectFd);
         Close(connectFd);
     }
@@ -54,15 +55,27 @@ int main(int argc, char **argv)
 }
 
 void handleClient(int connectFd){
-    struct stat subf;
     int i;
-    char buf[MAXLINE], contentProxyToServer[MAXLINE], request[MAXLINE], headers[MAXLINE];
+    char buf[MAXLINE], contentProxyToServer[MAXLINE], request[MAXLINE], contentBackToClinet[MAXLINE];
+    strcpy(buf, "");
+    strcpy(contentProxyToServer, "");
+    strcpy(request, "");
+    strcpy(contentBackToClinet, "");
     char method[32], uri[1024], httpVersion[64], targetHostNameAndPort[128], fileName[128];
-    rio_t clientRio;
+    strcpy(method, "");
+    strcpy(uri, "");
+    strcpy(httpVersion, "");
+    strcpy(targetHostNameAndPort, "");
+    strcpy(fileName, "");
+
+    rio_t clientRio, targetRio;
     Rio_readinitb(&clientRio, connectFd);
     if (!Rio_readlineb(&clientRio, request, MAXLINE))  // GET requests
         return; // empty requests
-    sscanf(buf, "%s %s %s", method, uri, httpVersion);
+    printf("%s", request);
+    readHeaders(&clientRio);
+
+    sscanf(request, "%s %s %s", method, uri, httpVersion);
     strcpy(httpVersion, "HTTP/1.0");
     char *p = strstr(uri, "http://");
     if (!p) {                     // if "http://" not in uri
@@ -73,19 +86,17 @@ void handleClient(int connectFd){
     i = 0;
     while (*p != '/')
     {
-        targetHostNameAndPort[i] = *p;
-        i += 1;
+        targetHostNameAndPort[i++] = *p;
         p += 1;
     }
     targetHostNameAndPort[i] = '\0';
     // finish the content from proxy to target server
     strcpy(fileName, p);
-    sprintf(contentProxyToServer, "%s %s %s\r\p", method, fileName, httpVersion);
-    sprintf(contentProxyToServer, "%s%s\r\p", contentProxyToServer, user_agent_hdr);
-    sprintf(contentProxyToServer, "%sHost: %s\r\p", targetHostNameAndPort);
-    sprintf(contentProxyToServer, "%s%s\r\p", contentProxyToServer, connection_hdr);
-    sprintf(contentProxyToServer, "%s%s\r\p", contentProxyToServer, proxy_connection_hdr);
-
+    sprintf(contentProxyToServer, "%s %s %s\r\n", method, fileName, httpVersion);
+    sprintf(contentProxyToServer, "%sHost: %s\r\n", contentProxyToServer,targetHostNameAndPort);
+    sprintf(contentProxyToServer, "%s%s\r\n", contentProxyToServer, user_agent_hdr);
+    sprintf(contentProxyToServer, "%s%s\r\n", contentProxyToServer, connection_hdr);
+    sprintf(contentProxyToServer, "%s%s\r\n\r\n", contentProxyToServer, proxy_connection_hdr);
     char targetServerName[64], targetPort[16];
     p = strstr(targetHostNameAndPort, ":");
     if(!p){
@@ -101,26 +112,37 @@ void handleClient(int connectFd){
         }
         targetServerName[i] = '\0';
     }
+
+    printf("open a connection to target\ncontent is\n%s", contentProxyToServer);
+    // open a connect from proxy to target
     int connectToTargetFd = Open_clientfd(targetServerName, targetPort);
-    if (connectToTargetFd < 0){
-        clienterror(connectFd, method, "501", "Not Implemented", "only http supported");
+    if (connectToTargetFd < 0){  // connect to server 
+        clienterror(connectFd, method, "404", "connect failure", 
+        "the proxy server connect to target server failure");
         return;
     }
     
-    printf("%s", buf);
-    
+    Rio_writen(connectToTargetFd, contentProxyToServer, strlen(contentProxyToServer));
+    Rio_readinitb(&targetRio, connectToTargetFd);
+
+    while( Rio_readlineb(&targetRio, buf, MAXLINE) > 0 ){
+        strcat(contentBackToClinet, buf);
+    }
+    printf("\ncontent back to client is: \n%s", contentBackToClinet);
+    Rio_writen(connectFd, contentBackToClinet, strlen(contentBackToClinet));
+    Close(connectToTargetFd);
     
 }
 
-void readHeaders(rio_t *rp, char* headers){
-    char buf[MAXLINE];
-    Rio_readlineb(rp, buf, MAXLINE);
-    sprintf(headers, "%s", buf);
-    while (strcmp(buf, "\r\n"))
-    {
-        Rio_readlineb(rp, buf, MAXLINE);
-        strcat(headers, buf);
-    }
+void readHeaders(rio_t *rp){
+    // char buf[MAXLINE];
+    // Rio_readlineb(rp, buf, MAXLINE);
+    // printf("%s", buf);
+    // while (strcmp(buf, "\r\n"))
+    // {
+    //     Rio_readlineb(rp, buf, MAXLINE);
+    //     printf("%s", buf);
+    // }
     return ;   
 }
 
