@@ -2,7 +2,7 @@
  * @Author: Jack Guan cnboyuguan@gmail.com
  * @Date: 2022-08-15 00:43:27
  * @LastEditors: Jack Guan cnboyuguan@gmail.com
- * @LastEditTime: 2022-08-27 23:10:54
+ * @LastEditTime: 2022-08-27 23:23:21
  * @FilePath: /guan/CSAPP/CSAPP-Labs/labs/proxylab/proxy.c
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -44,13 +44,13 @@ int main(int argc, char **argv)
         clientLen = sizeof(clientAddr);
         connectFd = Accept(listenFd, (SA *)& clientAddr, &clientLen);
         Getnameinfo((SA *)&clientAddr, clientLen, clientHostName, MAXLINE, clientPort, MAXLINE, 0);
-        printf("\n########### new proxy###########\n##############\n");
-        printf("Accept connection from (%s,%s), content is :\n", clientHostName, clientPort);
+        // printf("\n########### new proxy###########\n##############\n");
+        // printf("Accept connection from (%s,%s), content is :\n", clientHostName, clientPort);
         handleClient(connectFd);
         Close(connectFd);
     }
     
-    printf("%s", user_agent_hdr);
+    // printf("%s", user_agent_hdr);
     return 0;
 }
 
@@ -72,7 +72,7 @@ void handleClient(int connectFd){
     Rio_readinitb(&clientRio, connectFd);
     if (!Rio_readlineb(&clientRio, request, MAXLINE))  // GET requests
         return; // empty requests
-    printf("%s", request);
+    // printf("%s", request);
     readHeaders(&clientRio);
 
     sscanf(request, "%s %s %s", method, uri, httpVersion);
@@ -113,7 +113,7 @@ void handleClient(int connectFd){
         targetServerName[i] = '\0';
     }
 
-    printf("open a connection to target\ncontent is\n%s", contentProxyToServer);
+    // printf("open a connection to target\ncontent is\n%s", contentProxyToServer);
     // open a connect from proxy to target
     int connectToTargetFd = Open_clientfd(targetServerName, targetPort);
     if (connectToTargetFd < 0){  // connect to server 
@@ -128,7 +128,7 @@ void handleClient(int connectFd){
     while( Rio_readlineb(&targetRio, buf, MAXLINE) > 0 ){
         strcat(contentBackToClinet, buf);
     }
-    printf("\ncontent back to client is: \n%s", contentBackToClinet);
+    // printf("\ncontent back to client is: \n%s", contentBackToClinet);
     Rio_writen(connectFd, contentBackToClinet, strlen(contentBackToClinet));
     Close(connectToTargetFd);
     
