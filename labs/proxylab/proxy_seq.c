@@ -2,7 +2,7 @@
  * @Author: Jack Guan cnboyuguan@gmail.com
  * @Date: 2022-08-15 00:43:27
  * @LastEditors: Jack Guan cnboyuguan@gmail.com
- * @LastEditTime: 2022-08-27 23:23:21
+ * @LastEditTime: 2022-08-28 18:02:14
  * @FilePath: /guan/CSAPP/CSAPP-Labs/labs/proxylab/proxy.c
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -57,15 +57,7 @@ int main(int argc, char **argv)
 void handleClient(int connectFd){
     int i;
     char buf[MAXLINE], contentProxyToServer[MAXLINE], request[MAXLINE], contentBackToClinet[MAXLINE];
-    strcpy(buf, "");
-    strcpy(contentProxyToServer, "");
-    strcpy(request, "");
-    strcpy(contentBackToClinet, "");
     char method[32], uri[1024], httpVersion[64], targetHostNameAndPort[128], fileName[128];
-    strcpy(method, "");
-    strcpy(uri, "");
-    strcpy(httpVersion, "");
-    strcpy(targetHostNameAndPort, "");
     strcpy(fileName, "");
 
     rio_t clientRio, targetRio;
@@ -125,6 +117,7 @@ void handleClient(int connectFd){
     Rio_writen(connectToTargetFd, contentProxyToServer, strlen(contentProxyToServer));
     Rio_readinitb(&targetRio, connectToTargetFd);
 
+    strcpy(contentBackToClinet, ""); // 先将其设置为空，避免出现之前的缓存没有分配的情况
     while( Rio_readlineb(&targetRio, buf, MAXLINE) > 0 ){
         strcat(contentBackToClinet, buf);
     }

@@ -2,7 +2,7 @@
  * @Author: Jack Guan cnboyuguan@gmail.com
  * @Date: 2022-08-15 00:43:27
  * @LastEditors: Jack Guan cnboyuguan@gmail.com
- * @LastEditTime: 2022-08-27 23:22:07
+ * @LastEditTime: 2022-08-28 20:53:32
  * @FilePath: /guan/CSAPP/CSAPP-Labs/labs/proxylab/proxy.c
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -22,11 +22,14 @@ static const char *proxy_connection_hdr = "Proxy-Connection: close";
 void handleClient(int connectFd);
 void readHeaders(rio_t *rp);
 void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longmsg);
+void *threadHandle(void *vargp);
+
 
 int main(int argc, char **argv)
 {
-    int listenFd, connectFd;
-    char clientHostName[MAXLINE], clientPort[MAXLINE]; 
+    int listenFd, *connectFdp;
+    char clientHostName[512], clientPort[8]; 
+    pthread_t pid;
     // check form
     if (argc != 2)
     {
@@ -42,31 +45,30 @@ int main(int argc, char **argv)
     while (1)
     {
         clientLen = sizeof(clientAddr);
-        connectFd = Accept(listenFd, (SA *)& clientAddr, &clientLen);
-        Getnameinfo((SA *)&clientAddr, clientLen, clientHostName, MAXLINE, clientPort, MAXLINE, 0);
-        printf("\n########### new proxy###########\n##############\n");
-        printf("Accept connection from (%s,%s), content is :\n", clientHostName, clientPort);
-        handleClient(connectFd);
-        Close(connectFd);
+        connectFdp = malloc(sizeof(int));
+        *connectFdp = Accept(listenFd, (SA *)& clientAddr, &clientLen);
+        Getnameinfo((SA *)&clientAddr, clientLen, clientHostName, 512, clientPort, 8, 0);
+        // printf("Accept connection from (%s,%s)\n", clientHostName, clientPort);
+        // handleClient(connectFd);
+        Pthread_create(&pid, NULL, threadHandle, connectFdp);
     }
     
-    printf("%s", user_agent_hdr);
+    // printf("%s", user_agent_hdr);
     return 0;
 }
 
-void handleClient(int connectFd){
-    int i;
+void *threadHandle(void *vargp){
+    
+    Pthread_detach(pthread_self());
+    printf("\n########### new proxy########################\n\n");
+    printf("thread id %lu is handling the request\n", pthread_self());
+
+    int connectFd = *(int *)vargp;
+    int i, n;
     char buf[MAXLINE], contentProxyToServer[MAXLINE], request[MAXLINE], contentBackToClinet[MAXLINE];
-    strcpy(buf, "");
-    strcpy(contentProxyToServer, "");
-    strcpy(request, "");
-    strcpy(contentBackToClinet, "");
     char method[32], uri[1024], httpVersion[64], targetHostNameAndPort[128], fileName[128];
-    strcpy(method, "");
-    strcpy(uri, "");
-    strcpy(httpVersion, "");
-    strcpy(targetHostNameAndPort, "");
     strcpy(fileName, "");
+
 
     rio_t clientRio, targetRio;
     Rio_readinitb(&clientRio, connectFd);
@@ -76,6 +78,12 @@ void handleClient(int connectFd){
     readHeaders(&clientRio);
 
     sscanf(request, "%s %s %s", method, uri, httpVersion);
+    if (strcasecmp(method, "GET"))
+    {
+        printf("Proxy does not implement the method");
+        return;
+    }
+
     strcpy(httpVersion, "HTTP/1.0");
     char *p = strstr(uri, "http://");
     if (!p) {                     // if "http://" not in uri
@@ -125,12 +133,17 @@ void handleClient(int connectFd){
     Rio_writen(connectToTargetFd, contentProxyToServer, strlen(contentProxyToServer));
     Rio_readinitb(&targetRio, connectToTargetFd);
 
-    while( Rio_readlineb(&targetRio, buf, MAXLINE) > 0 ){
-        strcat(contentBackToClinet, buf);
+    strcpy(contentBackToClinet, ""); // 先将其设置为空，避免出现之前的缓存没有分配的情况
+    while( (n = Rio_readlineb(&targetRio, buf, MAXLINE)) != 0 ){
+        // strcat(contentBackToClinet, buf);
+        Rio_writen(connectFd, buf, n);
+
     }
-    printf("\ncontent back to client is: \n%s", contentBackToClinet);
-    Rio_writen(connectFd, contentBackToClinet, strlen(contentBackToClinet));
+    // printf("\ncontent back to client is: \n%s", contentBackToClinet);
     Close(connectToTargetFd);
+    Close(connectFd);
+    Free(vargp);
+    return NULL;
     
 }
 
