@@ -2,7 +2,7 @@
  * @Author: Jack Guan cnboyuguan@gmail.com
  * @Date: 2022-08-15 00:43:27
  * @LastEditors: Jack Guan cnboyuguan@gmail.com
- * @LastEditTime: 2022-08-28 18:02:14
+ * @LastEditTime: 2022-08-28 22:39:43
  * @FilePath: /guan/CSAPP/CSAPP-Labs/labs/proxylab/proxy.c
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
@@ -34,9 +34,7 @@ int main(int argc, char **argv)
         exit(1);
     }
     
-
     listenFd = Open_listenfd(argv[1]);
-    
     socklen_t clientLen;
     struct sockaddr_storage clientAddr;
     while (1)
@@ -55,7 +53,7 @@ int main(int argc, char **argv)
 }
 
 void handleClient(int connectFd){
-    int i;
+    int i, n;
     char buf[MAXLINE], contentProxyToServer[MAXLINE], request[MAXLINE], contentBackToClinet[MAXLINE];
     char method[32], uri[1024], httpVersion[64], targetHostNameAndPort[128], fileName[128];
     strcpy(fileName, "");
@@ -65,9 +63,14 @@ void handleClient(int connectFd){
     if (!Rio_readlineb(&clientRio, request, MAXLINE))  // GET requests
         return; // empty requests
     // printf("%s", request);
-    readHeaders(&clientRio);
+    // readHeaders(&clientRio);
 
     sscanf(request, "%s %s %s", method, uri, httpVersion);
+    if (strcasecmp(method, "GET")) // check if is GET method
+    {
+        printf("Proxy does not implement the method");
+        return;
+    }
     strcpy(httpVersion, "HTTP/1.0");
     char *p = strstr(uri, "http://");
     if (!p) {                     // if "http://" not in uri
@@ -117,12 +120,11 @@ void handleClient(int connectFd){
     Rio_writen(connectToTargetFd, contentProxyToServer, strlen(contentProxyToServer));
     Rio_readinitb(&targetRio, connectToTargetFd);
 
-    strcpy(contentBackToClinet, ""); // 先将其设置为空，避免出现之前的缓存没有分配的情况
-    while( Rio_readlineb(&targetRio, buf, MAXLINE) > 0 ){
-        strcat(contentBackToClinet, buf);
+
+    while( (n = Rio_readlineb(&targetRio, buf, MAXLINE)) > 0 ){
+        Rio_writen(connectFd, buf, n);
     }
     // printf("\ncontent back to client is: \n%s", contentBackToClinet);
-    Rio_writen(connectFd, contentBackToClinet, strlen(contentBackToClinet));
     Close(connectToTargetFd);
     
 }
