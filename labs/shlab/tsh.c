@@ -12,7 +12,6 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <errno.h>
-
 /* Misc manifest constants */
 #define MAXLINE    1024   /* max line size */
 #define MAXARGS     128   /* max args on a command line */
@@ -36,7 +35,7 @@
  */
 
 /* Global variables */
-extern char **environ;      /* defined in libc */
+extern char **environ;      /* defined in libc, libc is a standard c library in linux*/
 char prompt[] = "tsh> ";    /* command line prompt (DO NOT CHANGE) */
 int verbose = 0;            /* if true, print additional output */
 int nextjid = 1;            /* next job ID to allocate */
@@ -138,20 +137,22 @@ int main(int argc, char **argv)
 	}
 	if ((fgets(cmdline, MAXLINE, stdin) == NULL) && ferror(stdin))
 	    app_error("fgets error");
-	if (feof(stdin)) { /* End of file (ctrl-d) */
+	if (feof(stdin)) { /* End of file (ctrl-d) */ 
+    // if only input a EOF, then quit the prompt
 	    fflush(stdout);
 	    exit(0);
 	}
 
 	/* Evaluate the command line */
 	eval(cmdline);
+    // listjobs(jobs);
 	fflush(stdout);
 	fflush(stdout);
     } 
 
     exit(0); /* control never reaches here */
 }
-  
+
 /* 
  * eval - Evaluate the command line that the user has just typed in
  * 
@@ -165,6 +166,43 @@ int main(int argc, char **argv)
 */
 void eval(char *cmdline) 
 {
+    char **argv = malloc(sizeof(char *)* MAXARGS) ; // args of this command
+    char buf[MAXLINE]; // the buf store command 
+    pid_t pid; // this process pid
+    strcpy(buf, cmdline);
+    int isBG = parseline(buf, argv); // is bg or fg
+    
+    if (argv[0] == NULL)
+        return; // empty input   
+
+    if (!builtin_cmd(argv)){ // not built in command
+
+        if((pid=fork()) == 0){ // child process section
+            if (isBG)             // add job according to the status
+                addjob(jobs, getpid(), BG, buf);
+            else
+                addjob(jobs, getpid(), FG, buf);
+            // listjobs(jobs);
+            if (execve(argv[0], argv, environ) < 0) // execution failure
+            {
+// TODO 弄清楚这里的job为啥会自动没
+                printf("%s: Command not found\n", argv[0]);
+                // listjobs(jobs);
+
+                exit(1);
+            }
+            deletejob(jobs, getpid()); // command execution finished, need to delete the job
+        }  
+        // parent process section
+        if (!isBG)
+        {
+            int status;
+            if(waitpid(pid, &status, 0) < 0)
+                unix_error("waitfg: waitfg error");
+        }else
+            printf("%d %s",pid ,buf);
+    }
+
     return;
 }
 
@@ -228,10 +266,19 @@ int parseline(const char *cmdline, char **argv)
 /* 
  * builtin_cmd - If the user has typed a built-in command then execute
  *    it immediately.  
+ * builtin cmd include: quit, fg, bg, and jobs
  */
 int builtin_cmd(char **argv) 
 {
-    return 0;     /* not a builtin command */
+    if(!strcmp((const char *)argv[0], "quit"))
+        exit(0);
+    else if((!strcmp((const char *)argv[0], "bg")) ||  (!strcmp((const char *)argv[0], "fg")) )
+        do_bgfg(argv);
+    else if(!strcmp((const char *)argv[0], "jobs"))
+        listjobs(jobs);
+    else
+        return 0;     /* not a builtin command */
+    return 1;       // is a builtin command
 }
 
 /* 
@@ -273,6 +320,7 @@ void sigchld_handler(int sig)
  */
 void sigint_handler(int sig) 
 {
+
     return;
 }
 
