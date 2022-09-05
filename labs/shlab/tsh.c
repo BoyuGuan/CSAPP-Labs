@@ -145,7 +145,7 @@ int main(int argc, char **argv)
 
 	/* Evaluate the command line */
 	eval(cmdline);
-    // listjobs(jobs);
+
 	fflush(stdout);
 	fflush(stdout);
     } 
@@ -171,35 +171,45 @@ void eval(char *cmdline)
     pid_t pid; // this process pid
     strcpy(buf, cmdline);
     int isBG = parseline(buf, argv); // is bg or fg
-    
+
     if (argv[0] == NULL)
         return; // empty input   
 
     if (!builtin_cmd(argv)){ // not built in command
 
-        if((pid=fork()) == 0){ // child process section
-            if (isBG)             // add job according to the status
-                addjob(jobs, getpid(), BG, buf);
-            else
-                addjob(jobs, getpid(), FG, buf);
-            // listjobs(jobs);
-            if (execve(argv[0], argv, environ) < 0) // execution failure
-            {
-// TODO 弄清楚这里的job为啥会自动没
-                printf("%s: Command not found\n", argv[0]);
-                // listjobs(jobs);
-
-                exit(1);
+        // block child process in order to avoid race:
+        // the child process stopped before add job
+        sigset_t mask, prev_mask;
+        sigemptyset(&mask);
+        sigaddset(&mask, SIGCHLD);
+        sigprocmask(SIG_BLOCK, &mask, &prev_mask); 
+        if( (pid = fork()) == 0){ // child process section
+            sigprocmask(SIG_SETMASK, &prev_mask, NULL); // unblock child signal after add job
+            if(isBG){ // background process ignore the interrupt signal and tstp signal
+                Signal(SIGINT, SIG_IGN); 
+                Signal(SIGTSTP, SIG_IGN);
             }
-            deletejob(jobs, getpid()); // command execution finished, need to delete the job
+            else
+                setpgid(0,0); // let front process in the process group id same to the pid
+            if ( execve(argv[0], argv, environ) < 0)  
+            // if execution scussesful, it will not return, so don't need to handle
+            {
+                // execution failure
+                printf("%s: Command not found\n", argv[0]);
+                fflush(stdout);
+                exit(0);
+            }
         }  
-        // parent process section
+
+        // parent process（shell process）maintain the jobs struct
+        // attention：once I put the add job and deletejob in the child process
+        // it can't be found in shell by typing jobs, because the job info is in 
+        // child process jobs struct
+        addjob(jobs, pid ,(isBG == 1) ? BG : FG, buf);
+        sigprocmask(SIG_SETMASK, &prev_mask, NULL); // unblock child signal after add job
         if (!isBG)
-        {
-            int status;
-            if(waitpid(pid, &status, 0) < 0)
-                unix_error("waitfg: waitfg error");
-        }else
+            waitfg(pid);
+        else
             printf("%d %s",pid ,buf);
     }
 
@@ -270,7 +280,7 @@ int parseline(const char *cmdline, char **argv)
  */
 int builtin_cmd(char **argv) 
 {
-    if(!strcmp((const char *)argv[0], "quit"))
+    if((!strcmp((const char *)argv[0], "quit")) || (!strcmp((const char *)argv[0], "exit")))
         exit(0);
     else if((!strcmp((const char *)argv[0], "bg")) ||  (!strcmp((const char *)argv[0], "fg")) )
         do_bgfg(argv);
@@ -286,6 +296,24 @@ int builtin_cmd(char **argv)
  */
 void do_bgfg(char **argv) 
 {
+    if(argv[1] == NULL){
+        printf("fg command requires PID or %%jobid argument\n");
+        return;
+    }
+    pid_t pid;
+    char id[32];
+    if(argv[1][0] == '%' ){ // The argument pass in is a job id
+        int jid;
+        struct job_t * jobP;
+        jid = atoi(argv[1][1]);
+        pid = getjobjid(jobs, jid)->pid;
+    }
+    else // The argument pass in is a process id
+        pid = atoi(argv[1]);
+    if (!strcmp(argv[0], "bg")){
+        kill(SIGCONT, pid);
+    }
+
     return;
 }
 
@@ -294,7 +322,34 @@ void do_bgfg(char **argv)
  */
 void waitfg(pid_t pid)
 {
-    return;
+    int status;
+    
+    /* wait for FG job to stop (WUNTRACED) or terminate */
+    // use UNTRACED option to react the stop signal
+    if (waitpid(pid, &status, WUNTRACED) < 0)
+        unix_error("waitfg: waitpid error");
+    
+    struct job_t* frontJob;
+    frontJob = getjobpid(jobs, pid);
+    
+    // jid_t jid;
+    /* FG job has stopped. Change its state in jobs list */
+    if (WIFSTOPPED(status)) {
+	    sprintf(sbuf, "Job [%d] (%d) stopped by signal %d\n", frontJob->jid, pid, SIGTSTP);
+	    psignal(WSTOPSIG(status), sbuf); 
+        frontJob->state = ST;
+    }
+    
+    /* FG job has terminated. Remove it from job list */
+    else {
+        /* check if job was terminated by an uncaught signal */
+        if (WIFSIGNALED(status)) { 
+            printf("Job [%d] (%d) terminated by signal %d\n", frontJob->jid, pid, SIGINT);
+        }
+        deletejob(jobs, pid);
+        if (verbose)
+            printf("waitfg: job %d deleted\n", pid);
+    }
 }
 
 /*****************
@@ -310,6 +365,24 @@ void waitfg(pid_t pid)
  */
 void sigchld_handler(int sig) 
 {
+    pid_t pid;
+    int status;
+    if (verbose)
+        printf("sigchld_handler: entering \n");
+    /* 
+     * Reap any zombie jobs.
+     * The WNOHANG here is important. Without it, the 
+     * the handler would wait for all running or stopped BG 
+     * jobs to terminate, during which time the shell would not
+     * be able to accept input. 
+     */
+    while ((pid = waitpid(-1, &status, WNOHANG)) > 0)
+    {
+        deletejob(jobs, pid);
+        if (verbose)
+            printf("sigchld_handler: job %d deleted\n", pid);
+    }
+    
     return;
 }
 
@@ -317,10 +390,21 @@ void sigchld_handler(int sig)
  * sigint_handler - The kernel sends a SIGINT to the shell whenver the
  *    user types ctrl-c at the keyboard.  Catch it and send it along
  *    to the foreground job.  
+ * By default, your shell and the process it create will be in foreground
+ *    process group, interrupt signal will be send to every process and the 
+ *    shell process has handler below, sigint_handler, so it will not be 
+ *    terminated by the interrupt sig. But the child process it create don't 
+ *    have handler, all the child process will be terminated. So we need to send
+ *    it only to the foreground process.
  */
 void sigint_handler(int sig) 
 {
-
+    pid_t fg_pid;
+    fg_pid = fgpid(jobs);
+    if (fg_pid) 
+      // If there is no front process, the fg_pid will be 0,
+      //and kill function will send the int signal to the caller, thus in self loop
+        kill(fg_pid, SIGINT); // send it to the foreground job
     return;
 }
 
@@ -331,6 +415,10 @@ void sigint_handler(int sig)
  */
 void sigtstp_handler(int sig) 
 {
+    pid_t fg_pid;
+    fg_pid = fgpid(jobs);
+    if (fg_pid) 
+        kill(fg_pid, SIGTSTP); // send it to the foreground job
     return;
 }
 
